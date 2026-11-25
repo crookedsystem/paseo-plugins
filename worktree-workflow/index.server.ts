@@ -10,13 +10,11 @@ import {
   rememberWorktreePathOverride,
   takeWorktreePathOverride,
 } from "./server/worktree-path-overrides";
-import { titleWorkspaceAfterWorktreeFolder } from "./server/workspace-title";
 import { previewWorktreePathRpc, worktreePathSettings } from "./shared/worktree-path";
 
 // When a worktree is created with a first prompt but no branch name, the branch is named from that prompt
 // before the worktree exists. Every new worktree is placed at the path template chosen on the New workspace
-// screen, or else at the default template from the plugin settings, and the workspace is named after
-// the worktree folder.
+// screen, or else at the default template from the plugin settings.
 export default function contribute(server: PluginServerContext) {
   const worktreePathSettingsStore = server.registerSettings(worktreePathSettings);
   server.handle(previewWorktreePathRpc, (input, { paseo }) => previewWorktreePath(input, paseo));
@@ -28,16 +26,10 @@ export default function contribute(server: PluginServerContext) {
       const worktreePathTemplate =
         worktreePathOverride ?? (await readDefaultWorktreePathTemplate(worktreePathSettingsStore));
       const namedRequest = await nameBranchFromFirstPrompt(request, context, worktreePathTemplate);
-      const requestWithBranch = namedRequest ?? request;
       if (worktreePathOverride) {
-        rememberWorktreePathOverride(requestWithBranch, worktreePathOverride);
+        rememberWorktreePathOverride(namedRequest ?? request, worktreePathOverride);
       }
-      const titledRequest = await titleWorkspaceAfterWorktreeFolder(
-        requestWithBranch,
-        context.paseo,
-        worktreePathTemplate,
-      );
-      return titledRequest ?? namedRequest;
+      return namedRequest;
     },
   );
   const removePlacementHook = server.addHook("worktree.create.before", async ({ request }) => {

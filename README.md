@@ -44,8 +44,8 @@ When a worktree is created with a first prompt but no branch name, the plugin as
 
 ### Notes
 
-- When the branch name is known before the worktree is created (typed, or named from the first prompt), the workspace is named after the worktree folder, e.g. `feat-login`, instead of the first prompt. Paseo's later AI title keeps it, because Paseo replaces only an empty title or the prompt title. A title the caller passes explicitly is kept. When Paseo picks a random branch name, Paseo's own naming applies. To rename a workspace, run `paseo workspace rename <workspace-id> <name>`.
-- Besides the disk path and the workspace name, the plugin changes only the branch name and a `worktreeWorkflow.worktreePathTemplate` entry in the workspace metadata when a one-off path is chosen.
+- To show workspaces by branch name in the sidebar, choose Title → Branch name in the sidebar display preferences. Paseo shows the branch name for every workspace, including existing ones.
+- Besides the disk path, the plugin changes only the branch name and a `worktreeWorkflow.worktreePathTemplate` entry in the workspace metadata when a one-off path is chosen.
 - Requires Paseo `>=0.17.4` (`requirements.paseo` in `paseo-plugin.json`).
 
 ### Layout
@@ -62,7 +62,6 @@ worktree-workflow/
   index.server.ts                 ← registers the settings, the path preview RPC, and both hooks (daemon)
   server/branch-name-from-prompt.ts
   server/source-checkout.ts
-  server/workspace-title.ts
   server/worktree-path.ts
   server/worktree-path-overrides.ts
   shared/worktree-path.ts         ← path template, settings definition, and RPC contract
