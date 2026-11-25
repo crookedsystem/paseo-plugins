@@ -5,7 +5,6 @@ import { z } from "zod";
 // branch name with / replaced by -.
 export const DEFAULT_WORKTREE_PATH_TEMPLATE = "../{repo}__worktrees/{branch}";
 const BRANCH_PLACEHOLDER = "{branch}";
-const REPOSITORY_PLACEHOLDER = "{repo}";
 
 // Workspace metadata key the New workspace field uses to pass a one-off path to the daemon hooks.
 export const WORKTREE_PATH_METADATA_KEY = "worktreeWorkflow.worktreePathTemplate";
@@ -36,18 +35,21 @@ export function expandWorktreePathTemplate(
   worktreePathTemplate: string,
   { repositoryName, branch }: { repositoryName: string; branch: string },
 ) {
-  return worktreePathTemplate
-    .replaceAll(REPOSITORY_PLACEHOLDER, repositoryName)
-    .replaceAll(BRANCH_PLACEHOLDER, branch.replaceAll("/", "-"));
+  const branchPath = branch.replaceAll("/", "-");
+  return worktreePathTemplate.replace(/\{repo\}|\{branch\}/g, (placeholder) =>
+    placeholder === BRANCH_PLACEHOLDER ? branchPath : repositoryName,
+  );
 }
 
-// Resolves a template to the absolute path it would create, so the app can show it before creation.
+// Resolves templates to the absolute paths they would create, so the app can show them before creation.
 export const previewWorktreePathRpc = defineRpc({
   name: "worktree-path.preview",
   input: z.object({
     projectId: z.string(),
-    worktreePathTemplate: z.string(),
+    worktreePathTemplates: z.array(z.string()),
     branch: z.string().nullable(),
   }),
-  output: z.object({ worktreePath: z.string() }),
+  output: z.object({
+    previews: z.array(z.object({ worktreePathTemplate: z.string(), worktreePath: z.string() })),
+  }),
 });

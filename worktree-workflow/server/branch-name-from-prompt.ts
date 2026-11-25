@@ -5,6 +5,7 @@ import {
   type PluginHookContext,
   type PluginHookRequests,
 } from "@getpaseo/plugin/server";
+import { containsBranchPlaceholder } from "../shared/worktree-path";
 import { resolveSourceCheckout } from "./source-checkout";
 import { resolveWorktreePath } from "./worktree-path";
 
@@ -24,23 +25,31 @@ type WorktreeSource = Extract<WorkspaceCreateRequest["source"], { kind: "worktre
 export async function nameBranchFromFirstPrompt(
   request: WorkspaceCreateRequest,
   { paseo, signal }: PluginHookContext,
-  worktreePathTemplate: string,
+  resolveWorktreePathTemplate: () => string | Promise<string>,
 ) {
   const { source } = request;
   const firstPrompt = request.firstAgentContext?.prompt?.trim();
   if (source.kind !== "worktree" || !firstPrompt || !createsNewUnnamedBranch(source)) {
     return undefined;
   }
+  const worktreePathTemplate = await resolveWorktreePathTemplate();
   try {
     const sourceCheckout = await resolveSourceCheckout(source, paseo);
+    const hasBranchPlaceholder = containsBranchPlaceholder(worktreePathTemplate);
+    const fixedPath = hasBranchPlaceholder
+      ? undefined
+      : resolveWorktreePath(sourceCheckout, "", worktreePathTemplate);
+    assertFixedPathAvailable(fixedPath);
     const generatedBranchName = await generateBranchNameFromPrompt(firstPrompt, signal);
+    // The destination may become occupied while Claude runs.
+    assertFixedPathAvailable(fixedPath);
     const branchName = await findUnusedBranchName(
       sourceCheckout,
       generatedBranchName,
-      worktreePathTemplate,
+      hasBranchPlaceholder ? worktreePathTemplate : undefined,
     );
     console.log(`branch name from first prompt: ${branchName}`);
-    return { ...request, source: { ...source, branchName } };
+    return { request: { ...request, source: { ...source, branchName } }, sourceCheckout };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.log(`branch name from first prompt skipped: ${reason}`);
@@ -85,18 +94,24 @@ function toBranchSlug(text: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function assertFixedPathAvailable(fixedPath: string | undefined) {
+  if (fixedPath !== undefined && existsSync(fixedPath)) {
+    throw new Error(`worktree path is already occupied: ${fixedPath}`);
+  }
+}
+
 // An existing local branch name makes Paseo branch off that branch instead of the base,
 // and an existing folder makes worktree creation fail, so pick a name that is free on both sides.
 async function findUnusedBranchName(
   sourceCheckout: string,
   desiredBranchName: string,
-  worktreePathTemplate: string,
+  branchPathTemplate: string | undefined,
 ) {
   for (let suffix = 1; suffix <= MAX_BRANCH_NAME_SUFFIX; suffix++) {
     const candidate = suffix === 1 ? desiredBranchName : `${desiredBranchName}-${suffix}`;
-    const isFolderTaken = existsSync(
-      resolveWorktreePath(sourceCheckout, candidate, worktreePathTemplate),
-    );
+    const isFolderTaken =
+      branchPathTemplate !== undefined &&
+      existsSync(resolveWorktreePath(sourceCheckout, candidate, branchPathTemplate));
     if (!isFolderTaken && !(await localBranchExists(sourceCheckout, candidate))) {
       return candidate;
     }

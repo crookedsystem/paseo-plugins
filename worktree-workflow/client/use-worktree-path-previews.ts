@@ -17,7 +17,7 @@ export function useWorktreePathPreviews(
   latestPreviewWorktreePath.current = previewWorktreePath;
   const [previewsByTemplate, setPreviewsByTemplate] = useState<Record<string, string>>({});
   // The joined key stands in for the array, which callers rebuild on every render.
-  const templatesKey = worktreePathTemplates.join("\n");
+  const templatesKey = JSON.stringify([...new Set(worktreePathTemplates)]);
 
   useEffect(() => {
     if (!projectId) {
@@ -25,20 +25,21 @@ export function useWorktreePathPreviews(
     }
     let isCancelled = false;
     const timer = setTimeout(async () => {
-      const previewEntries = await Promise.all(
-        templatesKey.split("\n").map(async (worktreePathTemplate) => {
-          try {
-            const { worktreePath } = await latestPreviewWorktreePath.current({
-              projectId,
-              worktreePathTemplate,
-              branch,
-            });
-            return [worktreePathTemplate, worktreePath] as const;
-          } catch {
-            return [worktreePathTemplate, "Preview unavailable"] as const;
-          }
-        }),
-      );
+      const worktreePathTemplates: string[] = JSON.parse(templatesKey);
+      let previewEntries: [string, string][];
+      try {
+        const { previews } = await latestPreviewWorktreePath.current({
+          projectId,
+          worktreePathTemplates,
+          branch,
+        });
+        previewEntries = previews.map(({ worktreePathTemplate, worktreePath }) => [
+          worktreePathTemplate,
+          worktreePath,
+        ]);
+      } catch {
+        previewEntries = worktreePathTemplates.map((template) => [template, "Preview unavailable"]);
+      }
       if (!isCancelled) {
         setPreviewsByTemplate(Object.fromEntries(previewEntries));
       }

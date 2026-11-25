@@ -2,13 +2,12 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { nameBranchFromFirstPrompt } from "./server/branch-name-from-prompt";
 import {
   placeWorktree,
-  previewWorktreePath,
+  previewWorktreePaths,
   readDefaultWorktreePathTemplate,
 } from "./server/worktree-path";
 import {
+  createWorktreePathOverrides,
   readWorktreePathOverride,
-  rememberWorktreePathOverride,
-  takeWorktreePathOverride,
 } from "./server/worktree-path-overrides";
 import { previewWorktreePathRpc, worktreePathSettings } from "./shared/worktree-path";
 
@@ -17,29 +16,34 @@ import { previewWorktreePathRpc, worktreePathSettings } from "./shared/worktree-
 // screen, or else at the default template from the plugin settings.
 export default function contribute(server: PluginServerContext) {
   const worktreePathSettingsStore = server.registerSettings(worktreePathSettings);
-  server.handle(previewWorktreePathRpc, (input, { paseo }) => previewWorktreePath(input, paseo));
+  const worktreePathOverrides = createWorktreePathOverrides();
+  server.handle(previewWorktreePathRpc, (input, { paseo }) => previewWorktreePaths(input, paseo));
 
   const removeWorkspaceHook = server.addHook(
     "workspace.create.before",
     async ({ request }, context) => {
       const worktreePathOverride = readWorktreePathOverride(request);
-      const worktreePathTemplate =
-        worktreePathOverride ?? (await readDefaultWorktreePathTemplate(worktreePathSettingsStore));
-      const namedRequest = await nameBranchFromFirstPrompt(request, context, worktreePathTemplate);
-      if (worktreePathOverride) {
-        rememberWorktreePathOverride(namedRequest ?? request, worktreePathOverride);
-      }
-      return namedRequest;
+      const namedWorktree = await nameBranchFromFirstPrompt(request, context, () =>
+        worktreePathOverride ?? readDefaultWorktreePathTemplate(worktreePathSettingsStore),
+      );
+      await worktreePathOverrides.remember(
+        namedWorktree?.request ?? request,
+        context,
+        worktreePathOverride,
+        namedWorktree?.sourceCheckout,
+      );
+      return namedWorktree?.request;
     },
   );
   const removePlacementHook = server.addHook("worktree.create.before", async ({ request }) => {
     const worktreePathTemplate =
-      takeWorktreePathOverride(request.branch) ??
+      worktreePathOverrides.take(request.sourceCheckout, request.branch) ??
       (await readDefaultWorktreePathTemplate(worktreePathSettingsStore));
     return placeWorktree(request, worktreePathTemplate);
   });
   return () => {
     removeWorkspaceHook();
     removePlacementHook();
+    worktreePathOverrides.dispose();
   };
 }

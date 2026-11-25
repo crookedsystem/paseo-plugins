@@ -46,11 +46,16 @@ export async function readDefaultWorktreePathTemplate(settings: WorktreePathSett
   return DEFAULT_WORKTREE_PATH_TEMPLATE;
 }
 
-export async function previewWorktreePath(
-  { projectId, worktreePathTemplate, branch }: RpcInput<typeof previewWorktreePathRpc>,
+export async function previewWorktreePaths(
+  { projectId, worktreePathTemplates, branch }: RpcInput<typeof previewWorktreePathRpc>,
   paseo: PluginHookContext["paseo"],
 ) {
   const sourceCheckout = await resolveSourceCheckout({ projectId }, paseo);
   const previewBranch = branch ?? "<branch>";
-  return { worktreePath: resolveWorktreePath(sourceCheckout, previewBranch, worktreePathTemplate) };
+  return {
+    previews: worktreePathTemplates.map((worktreePathTemplate) => ({
+      worktreePathTemplate,
+      worktreePath: resolveWorktreePath(sourceCheckout, previewBranch, worktreePathTemplate),
+    })),
+  };
 }

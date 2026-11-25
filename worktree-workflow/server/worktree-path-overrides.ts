@@ -1,13 +1,16 @@
-import type { PluginHookRequests } from "@getpaseo/plugin/server";
+import type { PluginHookContext, PluginHookRequests } from "@getpaseo/plugin/server";
 import { WORKTREE_PATH_METADATA_KEY } from "../shared/worktree-path";
+import { resolveSourceCheckout } from "./source-checkout";
 
 type WorkspaceCreateRequest = PluginHookRequests["workspace.create.before"];
 
-// worktree.create.before does not receive workspace metadata, so a one-off path chosen on the
-// New workspace screen is handed over by branch name. Entries expire in case creation fails
-// before the worktree hook runs.
 const OVERRIDE_LIFETIME_MS = 5 * 60_000;
-const pendingOverridesByBranch = new Map<string, { worktreePathTemplate: string; expiresAt: number }>();
+
+type PendingOverride = {
+  worktreePathTemplate: string;
+  expiresAt: number;
+  timer: ReturnType<typeof setTimeout>;
+};
 
 export function readWorktreePathOverride(request: WorkspaceCreateRequest) {
   const worktreePathTemplate = request.metadata?.[WORKTREE_PATH_METADATA_KEY];
@@ -17,29 +20,77 @@ export function readWorktreePathOverride(request: WorkspaceCreateRequest) {
   return worktreePathTemplate.trim();
 }
 
-// The branch name is known only when the user typed it or it was named from the first prompt.
-// When Paseo picks it later, the one-off path cannot be matched and the default path is used.
-export function rememberWorktreePathOverride(
-  request: WorkspaceCreateRequest,
-  worktreePathTemplate: string,
-) {
-  const { source } = request;
-  const branch = source.kind === "worktree" ? source.branchName : undefined;
-  if (!branch) {
-    console.log(`worktree path override skipped: no branch name yet for ${worktreePathTemplate}`);
-    return;
-  }
-  pendingOverridesByBranch.set(branch, {
-    worktreePathTemplate,
-    expiresAt: Date.now() + OVERRIDE_LIFETIME_MS,
-  });
-}
+// Placement receives the checkout and branch without the workspace metadata.
+export function createWorktreePathOverrides() {
+  const pendingByBranch = new Map<string, Map<string, PendingOverride>>();
+  let isDisposed = false;
 
-export function takeWorktreePathOverride(branch: string) {
-  const pendingOverride = pendingOverridesByBranch.get(branch);
-  pendingOverridesByBranch.delete(branch);
-  if (!pendingOverride || pendingOverride.expiresAt < Date.now()) {
-    return undefined;
+  function take(sourceCheckout: string, branch: string) {
+    const pendingByCheckout = pendingByBranch.get(branch);
+    const pending = pendingByCheckout?.get(sourceCheckout);
+    if (!pendingByCheckout || !pending) {
+      return undefined;
+    }
+    clearTimeout(pending.timer);
+    pendingByCheckout.delete(sourceCheckout);
+    if (pendingByCheckout.size === 0) {
+      pendingByBranch.delete(branch);
+    }
+    return pending.expiresAt > Date.now() ? pending.worktreePathTemplate : undefined;
   }
-  return pendingOverride.worktreePathTemplate;
+
+  async function remember(
+    { source }: WorkspaceCreateRequest,
+    { paseo, signal }: PluginHookContext,
+    worktreePathTemplate: string | undefined,
+    namedSourceCheckout?: string,
+  ) {
+    if (source.kind !== "worktree") {
+      return;
+    }
+    const branch = source.branchName?.trim();
+    if (!branch) {
+      if (worktreePathTemplate) {
+        console.log(`worktree path override skipped: no branch name yet for ${worktreePathTemplate}`);
+      }
+      return;
+    }
+    if (!worktreePathTemplate && !pendingByBranch.has(branch)) {
+      return;
+    }
+
+    try {
+      const sourceCheckout = namedSourceCheckout ?? (await resolveSourceCheckout(source, paseo));
+      if (isDisposed || signal.aborted) {
+        return;
+      }
+      take(sourceCheckout, branch);
+      if (!worktreePathTemplate) {
+        return;
+      }
+      const pendingByCheckout = pendingByBranch.get(branch) ?? new Map<string, PendingOverride>();
+      const timer = setTimeout(() => take(sourceCheckout, branch), OVERRIDE_LIFETIME_MS).unref();
+      pendingByCheckout.set(sourceCheckout, {
+        worktreePathTemplate,
+        expiresAt: Date.now() + OVERRIDE_LIFETIME_MS,
+        timer,
+      });
+      pendingByBranch.set(branch, pendingByCheckout);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.log(`worktree path override skipped: ${reason}`);
+    }
+  }
+
+  function dispose() {
+    isDisposed = true;
+    for (const pendingByCheckout of pendingByBranch.values()) {
+      for (const pending of pendingByCheckout.values()) {
+        clearTimeout(pending.timer);
+      }
+    }
+    pendingByBranch.clear();
+  }
+
+  return { remember, take, dispose };
 }
