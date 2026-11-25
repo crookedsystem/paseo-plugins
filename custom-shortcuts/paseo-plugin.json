@@ -1,0 +1,9 @@
+{
+  "id": "custom-shortcuts",
+  "name": "Custom shortcuts",
+  "description": "Cmd+Option+Arrow moves pane focus even from the composer, Cmd+Shift+O opens workspace search and Cmd+Shift+P opens the actions list.",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.17.4"
+  }
+}
