@@ -19,9 +19,12 @@ Paseo는 기본적으로 worktree를 `~/.paseo/worktrees/<해시>/<랜덤 slug>/
 ```
 
 - 앱, CLI, MCP, 에이전트 생성 등 Paseo가 worktree를 만드는 모든 경로에 적용된다. 이 daemon에 등록된 모든 프로젝트가 대상이다.
-- 브랜치명을 정하지 않고 만들면 Paseo가 붙인 랜덤 브랜치명(예: `tranquil-newt`)이 폴더명이 된다.
+- When a worktree is created with a first prompt but no branch name, the plugin asks `claude -p --model haiku` for a branch name (e.g. `fix-worktree-auto-branch-name`) before the worktree exists, and uses it for both the branch and the folder. If a local branch or folder with that name already exists, it appends `-2`, `-3`, and so on.
+  - Paseo also names branches with AI, but it first creates the worktree under a random name (e.g. `tranquil-newt`) and then renames only the branch. Without this plugin, the folder keeps the random name.
+  - If the daemon cannot find the `claude` CLI, the call takes longer than 20 seconds, or the reply is not a usable name, the folder gets Paseo's random branch name. The reason is logged as a `branch name from first prompt skipped: …` line in `paseo plugin logs worktree-sibling-placement`.
+  - No name is generated when there is no first prompt, or when an existing branch or PR is checked out.
 - 같은 경로가 이미 있으면 worktree 생성이 실패한다. Paseo는 플러그인이 정한 경로에 접미사를 붙여 주지 않는다. 같은 브랜치로 다시 만들려면 기존 worktree를 먼저 정리한다.
-- 바꾸는 것은 디스크 경로뿐이다. 앱에 보이는 워크스페이스 이름은 Paseo 기본값(브랜치명, 예: `feat/worktree`)을 그대로 쓴다. 이름을 바꾸려면 `paseo workspace rename <workspace-id> <이름>`을 쓴다.
+- Besides the disk path, the only thing the plugin changes is the branch name above. The workspace name shown in the app keeps Paseo's default (the branch name, e.g. `feat/worktree`). To change it, run `paseo workspace rename <workspace-id> <name>`.
 - 요구 버전: Paseo `>=0.17.4` (`paseo-plugin.json`의 `requirements.paseo`).
 
 ## 이 PC에 설치
