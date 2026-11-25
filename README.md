@@ -5,6 +5,24 @@
 | 플러그인 | 하는 일 |
 |---|---|
 | [`worktree-sibling-placement`](./worktree-sibling-placement) | 새 worktree를 원본 저장소 옆 `<저장소명>__worktrees/<브랜치명>`에 만든다 |
+| [`custom-shortcuts`](./custom-shortcuts) | Adds macOS shortcuts: pane focus that works from the composer, and command center Workspaces/Actions tabs |
+
+## custom-shortcuts
+
+A client plugin for the macOS desktop app (and the web app on a Mac). See [`OVERVIEW.md`](./custom-shortcuts/OVERVIEW.md) for the user-facing description.
+
+| Shortcut | What it does | How |
+|---|---|---|
+| `Cmd+Option+Arrow` | Focus pane left/right/up/down, also from the composer | Writes user overrides into the app's shortcut settings. Default `Cmd+Shift+Arrow` bindings are ignored in text fields; user overrides drop that condition |
+| `Cmd+Shift+O` | Opens the command center on the Workspaces tab | Listens for the key and sends the app `Cmd+K`, then `Tab` |
+| `Cmd+Shift+P` | Opens the command center on the Actions tab | Same, with `Shift+Tab`. Pin chat's default `Cmd+Shift+P` is unbound (`null` override) |
+
+- Both parts rely on app internals, not plugin APIs: the storage key `@paseo:keyboard-shortcut-overrides` (localStorage), and the command center opening on the All tab with `Tab`/`Shift+Tab` rotating `all → workspaces → files → actions`. A Paseo update can break them silently. These were read from the Paseo 0.17.4 app bundle.
+- Other custom shortcuts are kept. The plugin's overrides are rewritten on every load, so changing them in the Keyboard shortcuts screen does not last while the plugin is enabled.
+- The app may read its settings before the plugin writes them. After installing, reload the app window (`Cmd+R`) once or twice until the new keys appear under Help and support → Keyboard shortcuts.
+- Removing the plugin keeps the overrides it already wrote. Use Reset to default in the Keyboard shortcuts screen to undo them.
+
+Install it the same way as below, from the `custom-shortcuts` folder.
 
 ## worktree-sibling-placement
 
