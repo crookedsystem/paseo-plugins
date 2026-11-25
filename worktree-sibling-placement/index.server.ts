@@ -9,7 +9,7 @@ import {
 } from "@getpaseo/plugin/server";
 
 const BRANCH_NAME_MODEL = "haiku";
-// 훅 전체 제한(30초) 안에 git 조회까지 끝나도록 LLM 호출에는 더 짧은 제한을 둔다.
+// The whole hook has 30 seconds, so the LLM call gets a shorter limit to leave room for the git lookups.
 const BRANCH_NAME_TIMEOUT_MS = 20_000;
 const MAX_PROMPT_LENGTH = 2_000;
 const MAX_BRANCH_NAME_LENGTH = 50;
@@ -18,9 +18,10 @@ const MAX_BRANCH_NAME_SUFFIX = 50;
 type WorkspaceCreateRequest = PluginHookRequests["workspace.create.before"];
 type WorktreeSource = Extract<WorkspaceCreateRequest["source"], { kind: "worktree" }>;
 
-// 새 worktree를 원본 저장소 옆의 "<저장소명>__worktrees/<브랜치명의 / 를 - 로 바꾼 이름>"에 만든다.
-// 예: ~/src/fanplus-api + feat/worktree → ~/src/fanplus-api__worktrees/feat-worktree
-// 브랜치명을 정하지 않고 첫 프롬프트와 함께 만들면, worktree를 만들기 전에 프롬프트로 브랜치명을 지어 폴더명도 그 이름이 되게 한다.
+// Creates new worktrees next to the source checkout at "<repo>__worktrees/<branch with / replaced by ->".
+// Example: ~/src/fanplus-api + feat/worktree → ~/src/fanplus-api__worktrees/feat-worktree
+// When a worktree is created with a first prompt but no branch name, the branch is named from that prompt
+// before the worktree exists, so the folder gets the same name.
 export default function contribute(server: PluginServerContext) {
   const removeBranchNameHook = server.addHook(
     "workspace.create.before",
@@ -42,9 +43,9 @@ function resolveWorktreesRoot(sourceCheckout: string) {
   return join(dirname(sourceCheckout), `${basename(sourceCheckout)}__worktrees`);
 }
 
-// Paseo는 브랜치명이 비어 있으면 랜덤 이름으로 worktree를 만든 뒤 브랜치만 AI 이름으로 바꾼다.
-// 그러면 폴더명은 랜덤 이름으로 남으므로, 여기서 미리 이름을 정해 Paseo의 나중 이름 변경을 건너뛰게 한다.
-// 이름을 짓지 못하면 요청을 그대로 두어 기존 동작(랜덤 이름)으로 돌아간다.
+// Without a branch name, Paseo creates the worktree under a random name and later renames only the branch.
+// The folder would keep the random name, so the name is chosen here, which makes Paseo skip its later rename.
+// If no name can be chosen, the request is returned unchanged and Paseo falls back to its random name.
 async function nameBranchFromFirstPrompt(
   request: WorkspaceCreateRequest,
   { paseo, signal }: PluginHookContext,
@@ -107,7 +108,7 @@ async function generateBranchNameFromPrompt(firstPrompt: string, signal: AbortSi
     "Task:",
     firstPrompt.slice(0, MAX_PROMPT_LENGTH),
   ].join("\n");
-  // 저장소별 Claude 설정을 읽지 않도록 임시 폴더에서 실행한다.
+  // Run from a temporary directory so no repository-specific Claude settings are loaded.
   const { stdout } = await execCommand(
     "claude",
     ["-p", "--model", BRANCH_NAME_MODEL, "--no-session-persistence", instruction],
@@ -129,8 +130,8 @@ function toBranchSlug(text: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-// 이미 있는 로컬 브랜치명을 넘기면 Paseo가 base가 아니라 그 브랜치에서 갈라지고,
-// 이미 있는 폴더명이면 worktree 생성이 실패하므로 둘 다 비어 있는 이름을 고른다.
+// An existing local branch name makes Paseo branch off that branch instead of the base,
+// and an existing folder makes worktree creation fail, so pick a name that is free on both sides.
 async function findUnusedBranchName(sourceCheckout: string, desiredBranchName: string) {
   const worktreesRoot = resolveWorktreesRoot(sourceCheckout);
   for (let suffix = 1; suffix <= MAX_BRANCH_NAME_SUFFIX; suffix++) {
